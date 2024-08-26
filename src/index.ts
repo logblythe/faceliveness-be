@@ -28,6 +28,8 @@ app.use(
   })
 );
 
+app.use(express.json());
+
 const client = new RekognitionClient({
   region,
   credentials: {
@@ -38,14 +40,14 @@ const client = new RekognitionClient({
 
 const rekognition = new Rekognition({});
 
-const indexFaces = async (s3Object: S3Object | undefined) => {
+const indexFaces = async (s3Object: S3Object | undefined, username: string) => {
   try {
     const response = await rekognition.indexFaces({
       CollectionId: collectionId,
       Image: {
         S3Object: s3Object,
       },
-      ExternalImageId: "form bata aaune vay",
+      ExternalImageId: username,
     });
     console.log("Faces indexed: ", response.FaceRecords, response);
     return response;
@@ -62,7 +64,6 @@ const searchFacesByImage = async (s3Object: S3Object | undefined) => {
       S3Object: s3Object,
     },
   };
-
   try {
     const response = await rekognition.searchFacesByImage(params);
     console.log("Face matches: ", response.FaceMatches);
@@ -114,6 +115,41 @@ app.get(
     return res.json(response);
   }
 );
+
+app.get(
+  `/faceLiveness/getSessionResult/:sessionId`,
+  async (req: Request, res: Response) => {
+    const sessionId = req.params.sessionId;
+    const input = { SessionId: sessionId };
+    const command = new GetFaceLivenessSessionResultsCommand(input);
+    const response = await client.send(command);
+    console.log(response);
+    return res.json(response);
+  }
+);
+
+app.post(`/faceLiveness/indexFace`, async (req: Request, res: Response) => {
+  const { bucket, name, version, username } = req.body;
+  const s3Object: S3Object = {
+    Bucket: bucket,
+    Name: name,
+    Version: version,
+  };
+  indexFaces(s3Object, username);
+  return res.json({ message: "Face indexed successfully" });
+});
+
+app.post(`/faceLiveness/searchFace`, async (req: Request, res: Response) => {
+  const { bucket, name, version } = req.body;
+  const s3Object: S3Object = {
+    Bucket: bucket,
+    Name: name,
+    Version: version,
+  };
+  const result = await searchFacesByImage(s3Object);
+  const faceMatches = result.FaceMatches;
+  return res.json({ faceMatches });
+});
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
